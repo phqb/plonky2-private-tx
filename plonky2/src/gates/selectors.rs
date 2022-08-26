@@ -11,9 +11,9 @@ use crate::hash::hash_types::RichField;
 pub(crate) const UNUSED_SELECTOR: usize = u32::MAX as usize;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct SelectorsInfo {
-    pub(crate) selector_indices: Vec<usize>,
-    pub(crate) groups: Vec<Range<usize>>,
+pub struct SelectorsInfo {
+    pub selector_indices: Vec<usize>,
+    pub groups: Vec<Range<usize>>,
 }
 
 impl SelectorsInfo {

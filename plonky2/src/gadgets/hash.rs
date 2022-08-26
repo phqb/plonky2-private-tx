@@ -1,5 +1,5 @@
 use crate::field::extension::Extendable;
-use crate::hash::hash_types::RichField;
+use crate::hash::hash_types::{HashOutTarget, RichField};
 use crate::hash::hashing::SPONGE_WIDTH;
 use crate::iop::target::{BoolTarget, Target};
 use crate::plonk::circuit_builder::CircuitBuilder;
@@ -23,5 +23,12 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         swap: BoolTarget,
     ) -> [Target; SPONGE_WIDTH] {
         H::permute_swapped(inputs, swap, self)
+    }
+
+    pub fn public_inputs_hash<H: AlgebraicHasher<F>>(
+        &mut self,
+        inputs: Vec<Target>,
+    ) -> HashOutTarget {
+        H::public_inputs_hash(inputs, self)
     }
 }

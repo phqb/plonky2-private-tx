@@ -43,7 +43,7 @@ pub fn prove<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: 
     );
 
     let public_inputs = partition_witness.get_targets(&prover_data.public_inputs);
-    let public_inputs_hash = C::InnerHasher::hash_no_pad(&public_inputs);
+    let public_inputs_hash = C::InnerHasher::hash_public_inputs(&public_inputs);
 
     let witness = timed!(
         timing,
