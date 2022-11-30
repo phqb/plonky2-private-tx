@@ -7,8 +7,7 @@ use itertools::Itertools;
 
 use crate::field::extension::Extendable;
 use crate::gates::noop::NoopGate;
-use crate::hash::hash_types::{HashOut, HashOutTarget, MerkleCapTarget, RichField};
-use crate::hash::merkle_tree::MerkleCap;
+use crate::hash::hash_types::RichField;
 use crate::iop::target::{BoolTarget, Target};
 use crate::iop::witness::{PartialWitness, Witness};
 use crate::plonk::circuit_builder::CircuitBuilder;
@@ -19,7 +18,7 @@ use crate::plonk::config::{AlgebraicHasher, GenericConfig};
 use crate::plonk::proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget};
 use crate::recursion::conditional_recursive_verifier::dummy_proof;
 
-pub struct CyclicRecursionData<
+pub struct TreeRecursionData<
     'a,
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
@@ -30,7 +29,7 @@ pub struct CyclicRecursionData<
     common_data: &'a CommonCircuitData<F, D>,
 }
 
-pub struct CyclicRecursionTarget<const D: usize> {
+pub struct TreeRecursionTarget<const D: usize> {
     pub proof: ProofWithPublicInputsTarget<D>,
     pub verifier_data: VerifierCircuitTarget,
     pub dummy_proof: ProofWithPublicInputsTarget<D>,
@@ -38,78 +37,20 @@ pub struct CyclicRecursionTarget<const D: usize> {
     pub condition: BoolTarget,
 }
 
-impl<C: GenericConfig<D>, const D: usize> VerifierOnlyCircuitData<C, D> {
-    fn from_slice(slice: &[C::F], common_data: &CommonCircuitData<C::F, D>) -> Result<Self>
-        where
-            C::Hasher: AlgebraicHasher<C::F>,
-    {
-        // The structure of the public inputs is `[..., circuit_digest, constants_sigmas_cap]`.
-        let cap_len = common_data.config.fri_config.num_cap_elements();
-        let len = slice.len();
-        ensure!(len >= 4 + 4 * cap_len, "Not enough public inputs");
-        let constants_sigmas_cap = MerkleCap(
-            (0..cap_len)
-                .map(|i| HashOut {
-                    elements: core::array::from_fn(|j| slice[len - 4 * (cap_len - i) + j]),
-                })
-                .collect(),
-        );
-        let circuit_digest =
-            HashOut::from_partial(&slice[len - 4 - 4 * cap_len..len - 4 * cap_len]);
-
-        Ok(Self {
-            circuit_digest,
-            constants_sigmas_cap,
-        })
-    }
-}
-
-impl VerifierCircuitTarget {
-    fn from_slice<F: RichField + Extendable<D>, C: GenericConfig<D, F = F>, const D: usize>(
-        slice: &[Target],
-        common_data: &CommonCircuitData<F, D>,
-    ) -> Result<Self> {
-        let cap_len = common_data.config.fri_config.num_cap_elements();
-        let len = slice.len();
-        ensure!(len >= 4 + 4 * cap_len, "Not enough public inputs");
-        let constants_sigmas_cap = MerkleCapTarget(
-            (0..cap_len)
-                .map(|i| HashOutTarget {
-                    elements: core::array::from_fn(|j| slice[len - 4 * (cap_len - i) + j]),
-                })
-                .collect(),
-        );
-        let circuit_digest = HashOutTarget {
-            elements: core::array::from_fn(|i| slice[len - 4 - 4 * cap_len + i]),
-        };
-
-        Ok(Self {
-            circuit_digest,
-            constants_sigmas_cap,
-        })
-    }
-}
-
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
-    /// If `condition` is true, recursively verify a proof for the same circuit as the one we're
-    /// currently building.
-    ///
-    /// For a typical IVC use case, `condition` will be false for the very first proof in a chain,
-    /// i.e. the base case.
-    ///
     /// Note that this does not enforce that the inner circuit uses the correct verification key.
     /// This is not possible to check in this recursive circuit, since we do not know the
     /// verification key until after we build it. Verifiers must separately call
-    /// `check_cyclic_proof_verifier_data`, in addition to verifying a recursive proof, to check
+    /// `check_tree_proof_verifier_data`, in addition to verifying a recursive proof, to check
     /// that the verification key matches.
     ///
     /// WARNING: Do not register any public input after calling this! TODO: relax this
-    pub fn cyclic_recursion<C: GenericConfig<D, F = F>>(
+    pub fn tree_recursion<C: GenericConfig<D, F = F>>(
         &mut self,
-        condition: BoolTarget,
+        condition: BoolTarget, // false: leaf  true: node
         previous_virtual_public_inputs: &[Target],
         common_data: &mut CommonCircuitData<F, D>,
-    ) -> Result<CyclicRecursionTarget<D>>
+    ) -> Result<TreeRecursionTarget<D>>
         where
             C::Hasher: AlgebraicHasher<F>,
     {
@@ -166,7 +107,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
             self.add_gate_to_gate_set(g.clone());
         }
 
-        Ok(CyclicRecursionTarget {
+        Ok(TreeRecursionTarget {
             proof,
             verifier_data: verifier_data.clone(),
             dummy_proof,
@@ -176,63 +117,63 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
     }
 }
 
-/// Set the targets in a `CyclicRecursionTarget` to their corresponding values in a `CyclicRecursionData`.
-pub fn set_cyclic_recursion_data_target<
+/// Set the targets in a `TreeRecursionTarget` to their corresponding values in a `TreeRecursionData`.
+pub fn set_tree_recursion_data_target<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
 >(
     pw: &mut PartialWitness<F>,
-    cyclic_recursion_data_target: &CyclicRecursionTarget<D>,
-    cyclic_recursion_data: &CyclicRecursionData<F, C, D>,
+    tree_recursion_data_target: &TreeRecursionTarget<D>,
+    tree_recursion_data: &TreeRecursionData<F, C, D>,
     // Public inputs to set in the base case to seed some initial data.
     public_inputs: &[F],
 ) -> Result<()>
     where
         C::Hasher: AlgebraicHasher<F>,
 {
-    if let Some(proof) = cyclic_recursion_data.proof {
-        pw.set_bool_target(cyclic_recursion_data_target.condition, true);
-        pw.set_proof_with_pis_target(&cyclic_recursion_data_target.proof, proof);
+    if let Some(proof) = tree_recursion_data.proof {
+        pw.set_bool_target(tree_recursion_data_target.condition, true);
+        pw.set_proof_with_pis_target(&tree_recursion_data_target.proof, proof);
         pw.set_verifier_data_target(
-            &cyclic_recursion_data_target.verifier_data,
-            cyclic_recursion_data.verifier_data,
+            &tree_recursion_data_target.verifier_data,
+            tree_recursion_data.verifier_data,
         );
-        pw.set_proof_with_pis_target(&cyclic_recursion_data_target.dummy_proof, proof);
+        pw.set_proof_with_pis_target(&tree_recursion_data_target.dummy_proof, proof);
         pw.set_verifier_data_target(
-            &cyclic_recursion_data_target.dummy_verifier_data,
-            cyclic_recursion_data.verifier_data,
+            &tree_recursion_data_target.dummy_verifier_data,
+            tree_recursion_data.verifier_data,
         );
     } else {
-        let (dummy_proof, dummy_data) = dummy_proof::<F, C, D>(cyclic_recursion_data.common_data)?;
-        pw.set_bool_target(cyclic_recursion_data_target.condition, false);
+        let (dummy_proof, dummy_data) = dummy_proof::<F, C, D>(tree_recursion_data.common_data)?;
+        pw.set_bool_target(tree_recursion_data_target.condition, false);
         let mut proof = dummy_proof.clone();
         proof.public_inputs[0..public_inputs.len()].copy_from_slice(public_inputs);
         let pis_len = proof.public_inputs.len();
         // The circuit checks that the verifier data is the same throughout the cycle, so
         // we set the verifier data to the "real" verifier data even though it's unused in the base case.
-        let num_cap = cyclic_recursion_data
+        let num_cap = tree_recursion_data
             .common_data
             .config
             .fri_config
             .num_cap_elements();
         let s = pis_len - 4 - 4 * num_cap;
         proof.public_inputs[s..s + 4]
-            .copy_from_slice(&cyclic_recursion_data.verifier_data.circuit_digest.elements);
+            .copy_from_slice(&tree_recursion_data.verifier_data.circuit_digest.elements);
         for i in 0..num_cap {
             proof.public_inputs[s + 4 * (1 + i)..s + 4 * (2 + i)].copy_from_slice(
-                &cyclic_recursion_data.verifier_data.constants_sigmas_cap.0[i].elements,
+                &tree_recursion_data.verifier_data.constants_sigmas_cap.0[i].elements,
             );
         }
 
-        pw.set_proof_with_pis_target(&cyclic_recursion_data_target.proof, &proof);
+        pw.set_proof_with_pis_target(&tree_recursion_data_target.proof, &proof);
         pw.set_verifier_data_target(
-            &cyclic_recursion_data_target.verifier_data,
-            cyclic_recursion_data.verifier_data,
+            &tree_recursion_data_target.verifier_data,
+            tree_recursion_data.verifier_data,
         );
-        pw.set_proof_with_pis_target(&cyclic_recursion_data_target.dummy_proof, &dummy_proof);
+        pw.set_proof_with_pis_target(&tree_recursion_data_target.dummy_proof, &dummy_proof);
         pw.set_verifier_data_target(
-            &cyclic_recursion_data_target.dummy_verifier_data,
+            &tree_recursion_data_target.dummy_verifier_data,
             &dummy_data,
         );
     }
@@ -240,9 +181,9 @@ pub fn set_cyclic_recursion_data_target<
     Ok(())
 }
 
-/// Additional checks to be performed on a cyclic recursive proof in addition to verifying the proof.
+/// Additional checks to be performed on a tree recursive proof in addition to verifying the proof.
 /// Checks that the purported verifier data in the public inputs match the real verifier data.
-pub fn check_cyclic_proof_verifier_data<
+pub fn check_tree_proof_verifier_data<
     F: RichField + Extendable<D>,
     C: GenericConfig<D, F = F>,
     const D: usize,
@@ -275,8 +216,8 @@ mod tests {
     use crate::plonk::circuit_builder::CircuitBuilder;
     use crate::plonk::circuit_data::{CircuitConfig, CommonCircuitData, VerifierCircuitTarget};
     use crate::plonk::config::{AlgebraicHasher, GenericConfig, PoseidonGoldilocksConfig};
-    use crate::recursion::cyclic_recursion::{
-        check_cyclic_proof_verifier_data, set_cyclic_recursion_data_target, CyclicRecursionData,
+    use crate::recursion::tree_recursion::{
+        check_tree_proof_verifier_data, set_tree_recursion_data_target, TreeRecursionData,
     };
 
     // Generates `CommonCircuitData` usable for recursion.
@@ -316,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cyclic_recursion() -> Result<()> {
+    fn test_tree_recursion() -> Result<()> {
         const D: usize = 2;
         type C = PoseidonGoldilocksConfig;
         type F = <C as GenericConfig<D>>::F;
@@ -348,77 +289,77 @@ mod tests {
         let mut common_data = common_data_for_recursion::<F, C, D>();
 
         let condition = builder.add_virtual_bool_target_safe();
-        // Add cyclic recursion gadget.
-        let cyclic_data_target =
-            builder.cyclic_recursion::<C>(condition, &old_pis, &mut common_data)?;
+        // Add tree recursion gadget.
+        let tree_data_target =
+            builder.tree_recursion::<C>(condition, &old_pis, &mut common_data)?;
         let input_hash_bis =
-            builder.select_hash(cyclic_data_target.condition, old_hash, initial_hash);
+            builder.select_hash(tree_data_target.condition, old_hash, initial_hash);
         builder.connect_hashes(input_hash, input_hash_bis);
         // New counter is the previous counter +1 if the previous proof wasn't a base case.
         let new_counter_bis = builder.add(old_counter, condition.target);
         builder.connect(new_counter, new_counter_bis);
 
-        let cyclic_circuit_data = builder.build::<C>();
+        let tree_circuit_data = builder.build::<C>();
 
-        let cyclic_recursion_data = CyclicRecursionData {
+        let tree_recursion_data = TreeRecursionData {
             proof: &None, // Base case: We don't have a proof to put here yet.
-            verifier_data: &cyclic_circuit_data.verifier_only,
-            common_data: &cyclic_circuit_data.common,
+            verifier_data: &tree_circuit_data.verifier_only,
+            common_data: &tree_circuit_data.common,
         };
         let initial_hash = [F::ZERO, F::ONE, F::TWO, F::from_canonical_usize(3)];
-        set_cyclic_recursion_data_target(
+        set_tree_recursion_data_target(
             &mut pw,
-            &cyclic_data_target,
-            &cyclic_recursion_data,
+            &tree_data_target,
+            &tree_recursion_data,
             &initial_hash,
         )?;
-        let proof = cyclic_circuit_data.prove(pw)?;
-        check_cyclic_proof_verifier_data(
+        let proof = tree_circuit_data.prove(pw)?;
+        check_tree_proof_verifier_data(
             &proof,
-            cyclic_recursion_data.verifier_data,
-            cyclic_recursion_data.common_data,
+            tree_recursion_data.verifier_data,
+            tree_recursion_data.common_data,
         )?;
-        cyclic_circuit_data.verify(proof.clone())?;
+        tree_circuit_data.verify(proof.clone())?;
 
         // 1st recursive layer.
         let mut pw = PartialWitness::new();
-        let cyclic_recursion_data = CyclicRecursionData {
+        let tree_recursion_data = TreeRecursionData {
             proof: &Some(proof), // Input previous proof.
-            verifier_data: &cyclic_circuit_data.verifier_only,
-            common_data: &cyclic_circuit_data.common,
+            verifier_data: &tree_circuit_data.verifier_only,
+            common_data: &tree_circuit_data.common,
         };
-        set_cyclic_recursion_data_target(
+        set_tree_recursion_data_target(
             &mut pw,
-            &cyclic_data_target,
-            &cyclic_recursion_data,
+            &tree_data_target,
+            &tree_recursion_data,
             &[],
         )?;
-        let proof = cyclic_circuit_data.prove(pw)?;
-        check_cyclic_proof_verifier_data(
+        let proof = tree_circuit_data.prove(pw)?;
+        check_tree_proof_verifier_data(
             &proof,
-            cyclic_recursion_data.verifier_data,
-            cyclic_recursion_data.common_data,
+            tree_recursion_data.verifier_data,
+            tree_recursion_data.common_data,
         )?;
-        cyclic_circuit_data.verify(proof.clone())?;
+        tree_circuit_data.verify(proof.clone())?;
 
         // 2nd recursive layer.
         let mut pw = PartialWitness::new();
-        let cyclic_recursion_data = CyclicRecursionData {
+        let tree_recursion_data = TreeRecursionData {
             proof: &Some(proof), // Input previous proof.
-            verifier_data: &cyclic_circuit_data.verifier_only,
-            common_data: &cyclic_circuit_data.common,
+            verifier_data: &tree_circuit_data.verifier_only,
+            common_data: &tree_circuit_data.common,
         };
-        set_cyclic_recursion_data_target(
+        set_tree_recursion_data_target(
             &mut pw,
-            &cyclic_data_target,
-            &cyclic_recursion_data,
+            &tree_data_target,
+            &tree_recursion_data,
             &[],
         )?;
-        let proof = cyclic_circuit_data.prove(pw)?;
-        check_cyclic_proof_verifier_data(
+        let proof = tree_circuit_data.prove(pw)?;
+        check_tree_proof_verifier_data(
             &proof,
-            cyclic_recursion_data.verifier_data,
-            cyclic_recursion_data.common_data,
+            tree_recursion_data.verifier_data,
+            tree_recursion_data.common_data,
         )?;
 
         // Verify that the proof correctly computes a repeated hash.
@@ -436,6 +377,6 @@ mod tests {
                 .unwrap()
         );
 
-        cyclic_circuit_data.verify(proof)
+        tree_circuit_data.verify(proof)
     }
 }
