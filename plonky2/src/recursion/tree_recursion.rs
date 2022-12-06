@@ -176,11 +176,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         );
         self.connect_hashes(circuit_digest_hash, h);
 
-        self.verify_proof::<C>(
-            &inner_proof,
-            &inner_verifier_data,
-            &inner_common_data,
-        );
+        self.verify_proof::<C>(&inner_proof, &inner_verifier_data, &inner_common_data);
 
         // Make sure we have enough gates to match `common_data`.
         while self.num_gates() < (common_data.degree() / 2) {
@@ -385,6 +381,24 @@ mod tests {
         let cd1 = data.common;
         let vd1 = data.verifier_only;
 
+        // create dummy proof2
+        let hash2 = HashOut {
+            elements: [F::ZERO, F::ZERO, F::ZERO, F::TWO],
+        };
+        let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+        for _ in 0..4_000 {
+            builder.add_gate(NoopGate, vec![]);
+        }
+        let input_hash = builder.add_virtual_hash();
+        builder.register_public_inputs(&input_hash.elements);
+        let data = builder.build::<C>();
+        let mut inputs = PartialWitness::new();
+        inputs.set_hash_target(input_hash, hash2);
+        let proof2 = data.prove(inputs)?;
+        data.verify(proof2.clone())?;
+        let cd2 = data.common;
+        let vd2 = data.verifier_only;
+
         let mut common_data = common_data_for_recursion::<F, C, D>();
         // build leaf0
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
@@ -418,6 +432,22 @@ mod tests {
         check_tree_proof_verifier_data(&leaf_proof1, leaf_vd1, &common_data)
             .expect("Leaf 1 public inputs do not match its verifier data");
 
+        // build leaf2
+        let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+        let leaf_targets = builder.tree_recursion_leaf::<C>(cd2, &mut common_data)?;
+        let data = builder.build::<C>();
+        let leaf_vd2 = &data.verifier_only;
+        let mut pw = PartialWitness::new();
+        let leaf_data = TreeRecursionLeafData {
+            inner_proof: &proof2,
+            inner_verifier_data: &vd2,
+            verifier_data: leaf_vd2,
+        };
+        set_tree_recursion_leaf_data_target(&mut pw, &leaf_targets, &leaf_data)?;
+        let leaf_proof2 = data.prove(pw)?;
+        check_tree_proof_verifier_data(&leaf_proof2, leaf_vd2, &common_data)
+            .expect("Leaf 2 public inputs do not match its verifier data");
+
         // build node
         let mut builder = CircuitBuilder::<F, D>::new(config.clone());
         let node_targets = builder.tree_recursion_node::<C>(&mut common_data)?;
@@ -436,9 +466,31 @@ mod tests {
         check_tree_proof_verifier_data(&node_proof, node_vd, &common_data)
             .expect("Node public inputs do not match its verifier data");
 
+        // build root node
+        let mut builder = CircuitBuilder::<F, D>::new(config.clone());
+        let root_targets = builder.tree_recursion_node::<C>(&mut common_data)?;
+        let data = builder.build::<C>();
+        let root_vd = &data.verifier_only;
+        let mut pw = PartialWitness::new();
+        let root_data = TreeRecursionNodeData {
+            proof0: &node_proof,
+            proof1: &leaf_proof2,
+            verifier_data0: &node_vd,
+            verifier_data1: &leaf_vd2,
+            verifier_data: root_vd,
+        };
+        set_tree_recursion_node_data_target(&mut pw, &root_targets, &root_data)?;
+        let root_proof = data.prove(pw)?;
+        check_tree_proof_verifier_data(&root_proof, root_vd, &common_data)
+            .expect("Node public inputs do not match its verifier data");
+        assert_eq!(node_vd.circuit_digest, root_vd.circuit_digest);
+        assert_eq!(node_vd.constants_sigmas_cap, root_vd.constants_sigmas_cap);
+        println!("{:?}", node_vd.circuit_digest.elements);
+
         // Verify that the proof correctly computes the input hash.
         let leaf0_input_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(&hash0.elements);
         let leaf1_input_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(&hash1.elements);
+        let leaf2_input_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(&hash2.elements);
         assert_eq!(leaf0_input_hash.elements, leaf_proof0.public_inputs[0..4]);
         assert_eq!(leaf1_input_hash.elements, leaf_proof1.public_inputs[0..4]);
         let node_input_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
@@ -450,6 +502,15 @@ mod tests {
             .as_slice(),
         );
         assert_eq!(node_input_hash.elements, node_proof.public_inputs[0..4]);
+        let root_input_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
+            [
+                node_input_hash.elements.to_vec(),
+                leaf2_input_hash.elements.to_vec(),
+            ]
+            .concat()
+            .as_slice(),
+        );
+        assert_eq!(root_input_hash.elements, root_proof.public_inputs[0..4]);
 
         // Verify that the proof correctly computes the circuit hash.
         let leaf0_circuit_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
@@ -470,7 +531,15 @@ mod tests {
             .as_slice(),
         );
         assert_eq!(leaf1_circuit_hash.elements, leaf_proof1.public_inputs[4..8]);
-
+        let leaf2_circuit_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
+            [
+                vd2.circuit_digest.elements.to_vec(),
+                leaf_vd2.circuit_digest.elements.to_vec(),
+            ]
+            .concat()
+            .as_slice(),
+        );
+        assert_eq!(leaf2_circuit_hash.elements, leaf_proof2.public_inputs[4..8]);
         let node_circuit_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
             [
                 leaf0_circuit_hash.elements.to_vec(),
@@ -481,6 +550,16 @@ mod tests {
             .as_slice(),
         );
         assert_eq!(node_circuit_hash.elements, node_proof.public_inputs[4..8]);
+        let root_circuit_hash = hash_n_to_hash_no_pad::<F, PoseidonPermutation>(
+            [
+                node_circuit_hash.elements.to_vec(),
+                node_vd.circuit_digest.elements.to_vec(),
+                leaf2_circuit_hash.elements.to_vec(),
+            ]
+            .concat()
+            .as_slice(),
+        );
+        assert_eq!(root_circuit_hash.elements, root_proof.public_inputs[4..8]);
 
         Ok(())
     }
