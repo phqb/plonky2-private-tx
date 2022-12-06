@@ -5,8 +5,6 @@ use alloc::vec;
 use anyhow::{ensure, Result};
 
 use crate::field::extension::Extendable;
-use crate::fri::proof::FriProofTarget;
-use crate::gadgets::polynomial::PolynomialCoeffsExtTarget;
 use crate::gates::noop::NoopGate;
 use crate::hash::hash_types::RichField;
 use crate::iop::witness::{PartialWitness, Witness};
@@ -15,7 +13,7 @@ use crate::plonk::circuit_data::{
     CommonCircuitData, VerifierCircuitTarget, VerifierOnlyCircuitData,
 };
 use crate::plonk::config::{AlgebraicHasher, GenericConfig};
-use crate::plonk::proof::{ProofTarget, ProofWithPublicInputs, ProofWithPublicInputsTarget};
+use crate::plonk::proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget};
 
 pub struct TreeRecursionNodeData<
     'a,
@@ -55,39 +53,6 @@ pub struct TreeRecursionLeafTarget<const D: usize> {
     pub verifier_data: VerifierCircuitTarget,
 }
 
-pub fn clone_proof_target<const D: usize>(
-    proof_with_pis: &ProofWithPublicInputsTarget<D>,
-) -> ProofWithPublicInputsTarget<D> {
-    ProofWithPublicInputsTarget {
-        proof: ProofTarget {
-            wires_cap: proof_with_pis.proof.wires_cap.clone(),
-            plonk_zs_partial_products_cap: proof_with_pis
-                .proof
-                .plonk_zs_partial_products_cap
-                .clone(),
-            quotient_polys_cap: proof_with_pis.proof.quotient_polys_cap.clone(),
-            openings: proof_with_pis.proof.openings.clone(),
-            opening_proof: FriProofTarget {
-                commit_phase_merkle_caps: proof_with_pis
-                    .proof
-                    .opening_proof
-                    .commit_phase_merkle_caps
-                    .clone(),
-                query_round_proofs: proof_with_pis
-                    .proof
-                    .opening_proof
-                    .query_round_proofs
-                    .clone(),
-                final_poly: PolynomialCoeffsExtTarget(
-                    proof_with_pis.proof.opening_proof.final_poly.0.clone(),
-                ),
-                pow_witness: proof_with_pis.proof.opening_proof.pow_witness.clone(),
-            },
-        },
-        public_inputs: proof_with_pis.public_inputs.clone(),
-    }
-}
-
 impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
     /// WARNING: Do not register any public input before/after calling this!
     // Use requirement:
@@ -115,7 +80,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         self.register_public_inputs(&circuit_digest_hash.elements);
 
         assert!(self.verifier_data_public_input.is_none());
-        self.add_verifier_data_public_input();
+        self.add_verifier_data_public_inputs();
         let verifier_data = self.verifier_data_public_input.clone().unwrap();
         common_data.num_public_inputs = self.num_public_inputs();
 
@@ -149,8 +114,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         );
         self.connect_hashes(circuit_digest_hash, h);
 
-        self.verify_proof::<C>(clone_proof_target(&proof0), &verifier_data0, common_data);
-        self.verify_proof::<C>(clone_proof_target(&proof1), &verifier_data1, common_data);
+        self.verify_proof::<C>(&proof0, &verifier_data0, common_data);
+        self.verify_proof::<C>(&proof1, &verifier_data1, common_data);
 
         // Make sure we have enough gates to match `common_data`.
         while self.num_gates() < (common_data.degree() / 2) {
@@ -189,7 +154,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         self.register_public_inputs(&circuit_digest_hash.elements);
 
         assert!(self.verifier_data_public_input.is_none());
-        self.add_verifier_data_public_input();
+        self.add_verifier_data_public_inputs();
         let verifier_data = self.verifier_data_public_input.clone().unwrap();
         common_data.num_public_inputs = self.num_public_inputs();
 
@@ -212,7 +177,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
         self.connect_hashes(circuit_digest_hash, h);
 
         self.verify_proof::<C>(
-            clone_proof_target(&inner_proof),
+            &inner_proof,
             &inner_verifier_data,
             &inner_common_data,
         );
@@ -359,7 +324,7 @@ mod tests {
             constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
             circuit_digest: builder.add_virtual_hash(),
         };
-        builder.verify_proof::<C>(proof, &verifier_data, &data.common);
+        builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
         let data = builder.build::<C>();
 
         let config = CircuitConfig::standard_recursion_config();
@@ -369,7 +334,7 @@ mod tests {
             constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
             circuit_digest: builder.add_virtual_hash(),
         };
-        builder.verify_proof::<C>(proof, &verifier_data, &data.common);
+        builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
         while builder.num_gates() < 1 << 12 {
             builder.add_gate(NoopGate, vec![]);
         }
