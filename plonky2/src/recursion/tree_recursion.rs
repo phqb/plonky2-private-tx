@@ -10,7 +10,7 @@ use crate::hash::hash_types::RichField;
 use crate::iop::witness::{PartialWitness, Witness};
 use crate::plonk::circuit_builder::CircuitBuilder;
 use crate::plonk::circuit_data::{
-    CommonCircuitData, VerifierCircuitTarget, VerifierOnlyCircuitData,
+    CircuitConfig, CommonCircuitData, VerifierCircuitTarget, VerifierOnlyCircuitData,
 };
 use crate::plonk::config::{AlgebraicHasher, GenericConfig};
 use crate::plonk::proof::{ProofWithPublicInputs, ProofWithPublicInputsTarget};
@@ -21,11 +21,11 @@ pub struct TreeRecursionNodeData<
     C: GenericConfig<D, F = F>,
     const D: usize,
 > {
-    proof0: &'a ProofWithPublicInputs<F, C, D>,
-    proof1: &'a ProofWithPublicInputs<F, C, D>,
-    verifier_data0: &'a VerifierOnlyCircuitData<C, D>,
-    verifier_data1: &'a VerifierOnlyCircuitData<C, D>,
-    verifier_data: &'a VerifierOnlyCircuitData<C, D>,
+    pub proof0: &'a ProofWithPublicInputs<F, C, D>,
+    pub proof1: &'a ProofWithPublicInputs<F, C, D>,
+    pub verifier_data0: &'a VerifierOnlyCircuitData<C, D>,
+    pub verifier_data1: &'a VerifierOnlyCircuitData<C, D>,
+    pub verifier_data: &'a VerifierOnlyCircuitData<C, D>,
 }
 
 pub struct TreeRecursionLeafData<
@@ -34,9 +34,9 @@ pub struct TreeRecursionLeafData<
     C: GenericConfig<D, F = F>,
     const D: usize,
 > {
-    inner_proof: &'a ProofWithPublicInputs<F, C, D>,
-    inner_verifier_data: &'a VerifierOnlyCircuitData<C, D>,
-    verifier_data: &'a VerifierOnlyCircuitData<C, D>,
+    pub inner_proof: &'a ProofWithPublicInputs<F, C, D>,
+    pub inner_verifier_data: &'a VerifierOnlyCircuitData<C, D>,
+    pub verifier_data: &'a VerifierOnlyCircuitData<C, D>,
 }
 
 pub struct TreeRecursionNodeTarget<const D: usize> {
@@ -282,60 +282,60 @@ where
     Ok(())
 }
 
+// Generates `CommonCircuitData` usable for recursion.
+pub fn common_data_for_recursion<
+    F: RichField + Extendable<D>,
+    C: GenericConfig<D, F = F>,
+    const D: usize,
+>() -> CommonCircuitData<F, D>
+where
+    C::Hasher: AlgebraicHasher<F>,
+{
+    let config = CircuitConfig::standard_recursion_config();
+    let builder = CircuitBuilder::<F, D>::new(config);
+    let data = builder.build::<C>();
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let proof = builder.add_virtual_proof_with_pis::<C>(&data.common);
+    let verifier_data = VerifierCircuitTarget {
+        constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
+        circuit_digest: builder.add_virtual_hash(),
+    };
+    builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
+    let data = builder.build::<C>();
+
+    let config = CircuitConfig::standard_recursion_config();
+    let mut builder = CircuitBuilder::<F, D>::new(config);
+    let proof = builder.add_virtual_proof_with_pis::<C>(&data.common);
+    let verifier_data = VerifierCircuitTarget {
+        constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
+        circuit_digest: builder.add_virtual_hash(),
+    };
+    builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
+    while builder.num_gates() < 1 << 12 {
+        builder.add_gate(NoopGate, vec![]);
+    }
+    builder.build::<C>().common
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
 
-    use crate::field::extension::Extendable;
     use crate::field::types::Field;
     use crate::gates::noop::NoopGate;
-    use crate::hash::hash_types::{HashOut, RichField};
+    use crate::hash::hash_types::HashOut;
     use crate::hash::hashing::hash_n_to_hash_no_pad;
     use crate::hash::poseidon::PoseidonPermutation;
     use crate::iop::witness::{PartialWitness, Witness};
     use crate::plonk::circuit_builder::CircuitBuilder;
-    use crate::plonk::circuit_data::{CircuitConfig, CommonCircuitData, VerifierCircuitTarget};
-    use crate::plonk::config::{AlgebraicHasher, GenericConfig, PoseidonGoldilocksConfig};
+    use crate::plonk::circuit_data::CircuitConfig;
+    use crate::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
     use crate::recursion::tree_recursion::{
-        check_tree_proof_verifier_data, set_tree_recursion_leaf_data_target,
-        set_tree_recursion_node_data_target, TreeRecursionLeafData, TreeRecursionNodeData,
+        check_tree_proof_verifier_data, common_data_for_recursion,
+        set_tree_recursion_leaf_data_target, set_tree_recursion_node_data_target,
+        TreeRecursionLeafData, TreeRecursionNodeData,
     };
-
-    // Generates `CommonCircuitData` usable for recursion.
-    fn common_data_for_recursion<
-        F: RichField + Extendable<D>,
-        C: GenericConfig<D, F = F>,
-        const D: usize,
-    >() -> CommonCircuitData<F, D>
-    where
-        C::Hasher: AlgebraicHasher<F>,
-    {
-        let config = CircuitConfig::standard_recursion_config();
-        let builder = CircuitBuilder::<F, D>::new(config);
-        let data = builder.build::<C>();
-        let config = CircuitConfig::standard_recursion_config();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
-        let proof = builder.add_virtual_proof_with_pis::<C>(&data.common);
-        let verifier_data = VerifierCircuitTarget {
-            constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
-            circuit_digest: builder.add_virtual_hash(),
-        };
-        builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
-        let data = builder.build::<C>();
-
-        let config = CircuitConfig::standard_recursion_config();
-        let mut builder = CircuitBuilder::<F, D>::new(config);
-        let proof = builder.add_virtual_proof_with_pis::<C>(&data.common);
-        let verifier_data = VerifierCircuitTarget {
-            constants_sigmas_cap: builder.add_virtual_cap(data.common.config.fri_config.cap_height),
-            circuit_digest: builder.add_virtual_hash(),
-        };
-        builder.verify_proof::<C>(&proof, &verifier_data, &data.common);
-        while builder.num_gates() < 1 << 12 {
-            builder.add_gate(NoopGate, vec![]);
-        }
-        builder.build::<C>().common
-    }
 
     #[test]
     fn test_tree_recursion() -> Result<()> {
