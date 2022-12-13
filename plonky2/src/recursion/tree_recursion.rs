@@ -7,7 +7,7 @@ use anyhow::{ensure, Result};
 use crate::field::extension::Extendable;
 use crate::gates::noop::NoopGate;
 use crate::hash::hash_types::RichField;
-use crate::iop::witness::{PartialWitness, Witness};
+use crate::iop::witness::{PartialWitness, WitnessWrite};
 use crate::plonk::circuit_builder::CircuitBuilder;
 use crate::plonk::circuit_data::{
     CircuitConfig, CommonCircuitData, VerifierCircuitTarget, VerifierOnlyCircuitData,
@@ -327,7 +327,7 @@ mod tests {
     use crate::hash::hash_types::HashOut;
     use crate::hash::hashing::hash_n_to_hash_no_pad;
     use crate::hash::poseidon::PoseidonPermutation;
-    use crate::iop::witness::{PartialWitness, Witness};
+    use crate::iop::witness::{PartialWitness, WitnessWrite};
     use crate::plonk::circuit_builder::CircuitBuilder;
     use crate::plonk::circuit_data::CircuitConfig;
     use crate::plonk::config::{GenericConfig, PoseidonGoldilocksConfig};
