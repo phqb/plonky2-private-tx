@@ -70,6 +70,7 @@ impl<F: Extendable<2>> Field for QuadraticExtension<F> {
     const TWO_ADICITY: usize = F::TWO_ADICITY + 1;
     const CHARACTERISTIC_TWO_ADICITY: usize = F::CHARACTERISTIC_TWO_ADICITY;
 
+    const NONRESIDUE: Self = Self(F::EXT_NONRESIDUE);
     const MULTIPLICATIVE_GROUP_GENERATOR: Self = Self(F::EXT_MULTIPLICATIVE_GROUP_GENERATOR);
     const POWER_OF_TWO_GENERATOR: Self = Self(F::EXT_POWER_OF_TWO_GENERATOR);
 

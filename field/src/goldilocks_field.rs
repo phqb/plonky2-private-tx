@@ -76,6 +76,8 @@ impl Field for GoldilocksField {
     const TWO_ADICITY: usize = 32;
     const CHARACTERISTIC_TWO_ADICITY: usize = Self::TWO_ADICITY;
 
+    const NONRESIDUE: Self = todo!();
+
     // Sage: `g = GF(p).multiplicative_generator()`
     const MULTIPLICATIVE_GROUP_GENERATOR: Self = Self(7);
 

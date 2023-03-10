@@ -79,6 +79,7 @@ impl<F: Extendable<5>> Field for QuinticExtension<F> {
     const TWO_ADICITY: usize = F::TWO_ADICITY;
     const CHARACTERISTIC_TWO_ADICITY: usize = F::CHARACTERISTIC_TWO_ADICITY;
 
+    const NONRESIDUE: Self = Self(F::EXT_NONRESIDUE);
     const MULTIPLICATIVE_GROUP_GENERATOR: Self = Self(F::EXT_MULTIPLICATIVE_GROUP_GENERATOR);
     const POWER_OF_TWO_GENERATOR: Self = Self(F::EXT_POWER_OF_TWO_GENERATOR);
 

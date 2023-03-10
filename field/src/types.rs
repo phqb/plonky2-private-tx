@@ -83,6 +83,8 @@ pub trait Field:
     /// Set to `None` when the characteristic doesn't fit in a u64.
     const CHARACTERISTIC_TWO_ADICITY: usize;
 
+    const NONRESIDUE: Self;
+
     /// Generator of the entire multiplicative group, i.e. all non-zero elements.
     const MULTIPLICATIVE_GROUP_GENERATOR: Self;
     /// Generator of a multiplicative subgroup of order `2^TWO_ADICITY`.
