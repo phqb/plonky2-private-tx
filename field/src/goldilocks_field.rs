@@ -97,6 +97,10 @@ impl Field for GoldilocksField {
         Self::order()
     }
 
+    fn mul_by_nonresidue(&self) -> Self {
+        todo!()
+    }
+
     #[inline(always)]
     fn try_inverse(&self) -> Option<Self> {
         try_inverse_u64(self)

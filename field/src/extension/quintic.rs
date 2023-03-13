@@ -92,6 +92,10 @@ impl<F: Extendable<5>> Field for QuinticExtension<F> {
         F::characteristic()
     }
 
+    fn mul_by_nonresidue(&self) -> Self {
+        todo!()
+    }
+
     // Algorithm 11.3.4 in Handbook of Elliptic and Hyperelliptic Curve Cryptography.
     fn try_inverse(&self) -> Option<Self> {
         if self.is_zero() {

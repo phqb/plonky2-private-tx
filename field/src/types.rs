@@ -125,6 +125,8 @@ pub trait Field:
         *self * (Self::ONE + Self::TWO)
     }
 
+    fn mul_by_nonresidue(&self) -> Self;
+
     /// Compute the multiplicative inverse of this field element.
     fn try_inverse(&self) -> Option<Self>;
 
