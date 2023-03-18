@@ -72,6 +72,7 @@ impl Field for GoldilocksField {
     const ONE: Self = Self(1);
     const TWO: Self = Self(2);
     const NEG_ONE: Self = Self(Self::ORDER - 1);
+    const MONTGOMERY_INV: Self = todo!();
 
     const TWO_ADICITY: usize = 32;
     const CHARACTERISTIC_TWO_ADICITY: usize = Self::TWO_ADICITY;

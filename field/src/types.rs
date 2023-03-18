@@ -75,6 +75,7 @@ pub trait Field:
     const ONE: Self;
     const TWO: Self;
     const NEG_ONE: Self;
+    const MONTGOMERY_INV: Self;
 
     /// The 2-adicity of this field's multiplicative group.
     const TWO_ADICITY: usize;

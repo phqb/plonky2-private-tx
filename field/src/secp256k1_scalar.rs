@@ -88,6 +88,7 @@ impl Field for Secp256K1Scalar {
         0xFFFFFFFFFFFFFFFE,
         0xFFFFFFFFFFFFFFFF,
     ]);
+    const MONTGOMERY_INV: Self = todo!();
 
     const TWO_ADICITY: usize = 6;
     const CHARACTERISTIC_TWO_ADICITY: usize = Self::TWO_ADICITY;

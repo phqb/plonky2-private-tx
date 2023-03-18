@@ -86,6 +86,7 @@ impl Field for Secp256K1Base {
         0xFFFFFFFFFFFFFFFF,
         0xFFFFFFFFFFFFFFFF,
     ]);
+    const MONTGOMERY_INV: Self = todo!();
 
     const TWO_ADICITY: usize = 1;
     const CHARACTERISTIC_TWO_ADICITY: usize = Self::TWO_ADICITY;

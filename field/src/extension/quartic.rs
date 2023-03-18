@@ -69,6 +69,7 @@ impl<F: Extendable<4>> Field for QuarticExtension<F> {
     const ONE: Self = Self([F::ONE, F::ZERO, F::ZERO, F::ZERO]);
     const TWO: Self = Self([F::TWO, F::ZERO, F::ZERO, F::ZERO]);
     const NEG_ONE: Self = Self([F::NEG_ONE, F::ZERO, F::ZERO, F::ZERO]);
+    const MONTGOMERY_INV: Self = todo!();
 
     // `p^4 - 1 = (p - 1)(p + 1)(p^2 + 1)`. The `p - 1` term has a two-adicity of `F::TWO_ADICITY`.
     // As long as `F::TWO_ADICITY >= 2`, `p` can be written as `4n + 1`, so `p + 1` can be written as
