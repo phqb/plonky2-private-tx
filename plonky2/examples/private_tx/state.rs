@@ -1,11 +1,10 @@
 use log::info;
 use plonky2::hash::merkle_proofs::MerkleProof;
+use plonky2::hash::merkle_tree::MerkleTree;
 use plonky2::hash::poseidon::PoseidonHash;
 use plonky2::plonk::config::{GenericHashOut, Hasher};
 use plonky2_field::goldilocks_field::GoldilocksField;
 use plonky2_field::types::Field;
-
-use crate::merkle_tree::MerkleTree;
 
 pub struct State {
     //private_utxo_tree stores Hash (privateKey, 0,0, tokenID, token_amount) of currently available tree
