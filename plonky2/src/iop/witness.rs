@@ -267,6 +267,7 @@ impl<F: Field> PartialWitness<F> {
 
 impl<F: Field> WitnessWrite<F> for PartialWitness<F> {
     fn set_target(&mut self, target: Target, value: F) {
+        log::info!("setting target {:?} value {:?}",target, value);
         let opt_old_value = self.target_values.insert(target, value);
         if let Some(old_value) = opt_old_value {
             assert_eq!(
@@ -309,6 +310,7 @@ impl<'a, F: Field> PartitionWitness<'a, F> {
     pub(crate) fn set_target_returning_rep(&mut self, target: Target, value: F) -> Option<usize> {
         let rep_index = self.representative_map[self.target_index(target)];
         let rep_value = &mut self.values[rep_index];
+        log::info!("set_target_returning_rep set target {:?} {:?}",target, value);
         if let Some(old_value) = *rep_value {
             assert_eq!(
                 value, old_value,

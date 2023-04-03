@@ -120,6 +120,8 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
     ) {
         let zero = self.zero();
         let mut state: HashOutTarget = self.hash_or_noop::<H>(leaf_data);
+        log::info!("leaf index bit {:?}", leaf_index_bits);
+        log::info!("leaf data {:?}", state);
 
         for (&bit, &sibling) in leaf_index_bits.iter().zip(&proof.siblings) {
             let mut perm_inputs = [zero; SPONGE_WIDTH];
@@ -137,6 +139,7 @@ impl<F: RichField + Extendable<D>, const D: usize> CircuitBuilder<F, D> {
                 cap_index,
                 merkle_cap.0.iter().map(|h| h.elements[i]).collect(),
             );
+            log::info!("result hash  {:?}", result);
             self.connect(result, state.elements[i]);
         }
     }

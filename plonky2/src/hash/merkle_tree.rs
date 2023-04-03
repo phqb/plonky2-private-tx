@@ -116,6 +116,7 @@ fn fill_digests_buf<F: RichField, H: Hasher<F>>(
 
     let subtree_digests_len = digests_buf.len() >> cap_height;
     let subtree_leaves_len = leaves.len() >> cap_height;
+    log::info!("subtree_digests_len {subtree_digests_len}");
     let digests_chunks = digests_buf.par_chunks_exact_mut(subtree_digests_len);
     let leaves_chunks = leaves.par_chunks_exact(subtree_leaves_len);
     assert_eq!(digests_chunks.len(), cap_buf.len());
@@ -126,6 +127,59 @@ fn fill_digests_buf<F: RichField, H: Hasher<F>>(
             // independent, so we schedule one task for each. `digests_buf` and `leaves` are split
             // into `1 << cap_height` slices, one for each sub-tree.
             subtree_cap.write(fill_subtree::<F, H>(subtree_digests, subtree_leaves));
+        },
+    );
+}
+
+fn update_subtree<F: RichField, H: Hasher<F>>(
+    digests_buf: &mut [H::Hash],
+    leaves: &[Vec<F>],
+) -> H::Hash {
+    assert_eq!(leaves.len(), digests_buf.len() / 2 + 1);
+    if digests_buf.is_empty() {
+        H::hash_or_noop(&leaves[0])
+    } else {
+        // Layout is: left recursive output || left child digest
+        //             || right child digest || right recursive output.
+        // Split `digests_buf` into the two recursive outputs (slices) and two child digests
+        // (references).
+        let (left_digests_buf, right_digests_buf) = digests_buf.split_at_mut(digests_buf.len() / 2);
+        let (left_digest_mem, left_digests_buf) = left_digests_buf.split_last_mut().unwrap();
+        let (right_digest_mem, right_digests_buf) = right_digests_buf.split_first_mut().unwrap();
+        // Split `leaves` between both children.
+        let (left_leaves, right_leaves) = leaves.split_at(leaves.len() / 2);
+
+        let (left_digest, right_digest) = maybe_rayon::join(
+            || update_subtree::<F, H>(left_digests_buf, left_leaves),
+            || update_subtree::<F, H>(right_digests_buf, right_leaves),
+        );
+
+        *left_digest_mem = left_digest;
+        *right_digest_mem = right_digest;
+        H::two_to_one(left_digest, right_digest)
+    }
+}
+
+pub fn update_digests<F: RichField, H: Hasher<F>>(
+    digest: &mut Vec<H::Hash>,
+    cap: &mut Vec<H::Hash>,
+    leaves: &mut [Vec<F>],
+    cap_height: usize,
+) {
+    // for each sub tree o
+    let subtree_digests_len = digest.len() >> cap_height;
+    let subtree_leaves_len = leaves.len() >> cap_height;
+    let digests_chunks = digest.par_chunks_exact_mut(subtree_digests_len);
+    let leaves_chunks = leaves.par_chunks_exact_mut(subtree_leaves_len);
+    assert_eq!(digests_chunks.len(), cap.len());
+    assert_eq!(digests_chunks.len(), leaves_chunks.len());
+    // digest_chunks.zip(cap_buf)
+    digests_chunks.zip(cap).zip(leaves_chunks).for_each(
+        |((subtree_digests, subtree_cap), subtree_leaves)| {
+            // We have `1 << cap_height` sub-trees, one for each entry in `cap`. They are totally
+            // independent, so we schedule one task for each. `digests_buf` and `leaves` are split
+            // into `1 << cap_height` slices, one for each sub-tree.
+            *subtree_cap = update_subtree::<F, H>(subtree_digests, subtree_leaves);
         },
     );
 }
@@ -162,6 +216,20 @@ impl<F: RichField, H: Hasher<F>> MerkleTree<F, H> {
             digests,
             cap: MerkleCap(cap),
         }
+    }
+
+    pub fn update(&mut self, leave: Vec<F>, index: usize, cap_height: usize) {
+        assert!(
+            index < self.leaves.len(),
+            "can only update, no append (index < tree length)",
+        );
+        self.leaves[index] = leave;
+        update_digests::<F, H>(
+            self.digests.as_mut(),
+            &mut self.cap.0,
+            self.leaves.as_mut(),
+            cap_height,
+        );
     }
 
     pub fn get(&self, i: usize) -> &[F] {
@@ -277,6 +345,39 @@ mod tests {
 
         verify_all_leaves::<F, C, D>(leaves, 1)?;
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_merkle_trees() -> Result<()> {
+        const D: usize = 2;
+        type C = PoseidonGoldilocksConfig;
+        type F = <C as GenericConfig<D>>::F;
+
+        let log_n = 8;
+        let cap_height = 0; // Should panic if `cap_height > len_n`.
+
+        let leaves = random_data::<F>(1 << log_n, 7);
+        let mut tree1 = MerkleTree::<F, <C as GenericConfig<D>>::Hasher>::new(leaves, cap_height);
+        let new_leave = random_data::<F>(1, 7)[0].clone();
+        let origin_merkle_root_value = tree1.cap.0[0];
+        log::info!("origin root value {:?}", origin_merkle_root_value);
+
+        tree1.update(new_leave, 1, cap_height);
+        let updated_merkle_root_value = tree1.cap.0[0];
+        log::info!("updated root value {:?}", updated_merkle_root_value);
+        assert_ne!(
+            origin_merkle_root_value, updated_merkle_root_value,
+            "updated value must be different from old root"
+        );
+        let new_leaves = tree1.leaves.clone();
+        let reconstructed_tree =
+            MerkleTree::<F, <C as GenericConfig<D>>::Hasher>::new(new_leaves, cap_height);
+        let reconstruct_merkle_root = reconstructed_tree.cap.0[0];
+        assert_eq!(
+            updated_merkle_root_value, reconstruct_merkle_root,
+            "wrong updated value"
+        );
         Ok(())
     }
 }

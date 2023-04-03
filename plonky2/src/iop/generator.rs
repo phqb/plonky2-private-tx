@@ -36,6 +36,7 @@ pub(crate) fn generate_partial_witness<
     );
 
     for (t, v) in inputs.target_values.into_iter() {
+        log::info!("generate_partial_witness set target {:?} {:?}",t, v);
         witness.set_target(t, v);
     }
 
